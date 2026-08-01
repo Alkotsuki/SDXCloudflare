@@ -1,0 +1,49 @@
+# Template — copy this folder into your app and fill in the REPLACE_WITH_* values
+# below before your first deploy. See SETUP.md for the exact commands.
+
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ---- Default (dev / sandbox) environment ----
+# Rename to "<yourapp>-proxy-dev" before deploying.
+name = "stage-sdx-proxy"
+
+[[kv_namespaces]]
+binding = "PROXY_KV"
+id = "REPLACE_WITH_KV_ID"
+preview_id = "REPLACE_WITH_PREVIEW_KV_ID"
+
+[vars]
+# Apple Team ID + bundle id, dot-joined. Find your Team ID at
+# https://developer.apple.com/account (Membership).
+APP_ID = "REPLACE_WITH_TEAMID.BUNDLEID"
+APPATTEST_ENV = "development"
+DAILY_REQUEST_CAP = "200"
+KILL_SWITCH = "0"
+# Defaults to OpenAI directly. To route through a Cloudflare AI Gateway instead
+# (rate limiting, caching, spend analytics), set this to
+# "https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/openai".
+OPENAI_BASE_URL = "https://api.openai.com"
+
+# ---- Production environment ----
+[env.production]
+# Rename to "<yourapp>-proxy" before deploying.
+name = "prod-sdx-proxy"
+
+[[env.production.kv_namespaces]]
+binding = "PROXY_KV"
+id = "REPLACE_WITH_PROD_KV_ID"
+
+[env.production.vars]
+APP_ID = "REPLACE_WITH_TEAMID.BUNDLEID"
+APPATTEST_ENV = "production"
+DAILY_REQUEST_CAP = "200"
+KILL_SWITCH = "0"
+OPENAI_BASE_URL = "https://api.openai.com"
+
+# Secrets (never put these here — set via `wrangler secret put`, per environment):
+#   OPENAI_API_KEY     — required, both environments
+#   DEV_BYPASS_TOKEN    — optional, dev/non-production environment only
+#   AI_GATEWAY_TOKEN    — optional, both environments, only if AI Gateway
+#                         "Authenticated Gateway" is enabled
