@@ -4,8 +4,7 @@ import PackageDescription
 let package = Package(
     name: "SDXCloudflare",
     platforms: [
-        .iOS(.v16),
-        .macOS(.v13),
+        .iOS(.v16)
     ],
     products: [
         .library(name: "SDXCloudflare", targets: ["SDXCloudflare"]),

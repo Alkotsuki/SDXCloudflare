@@ -2,11 +2,13 @@ import Testing
 @testable import SDXCloudflare
 import Foundation
 
+// Backed by `InMemoryKeychainBacking` rather than the real Security framework, so these run
+// anywhere — including a bare SPM test bundle on iOS Simulator, which has no host app and
+// therefore no `keychain-access-groups` entitlement for real Keychain calls to succeed with.
 @Suite("KeychainStore")
 struct KeychainStoreTests {
-    /// A distinct service name so these tests never collide with a host app's own Keychain items.
     private func makeStore() -> KeychainStore {
-        KeychainStore(service: "com.sdx.SDXCloudflareTests.\(UUID().uuidString)")
+        KeychainStore(service: "com.sdx.SDXCloudflareTests", backing: InMemoryKeychainBacking())
     }
 
     @Test("save then load round-trips the value")
