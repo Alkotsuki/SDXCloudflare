@@ -16,6 +16,10 @@ export interface Env {
   // Cloudflare AI Gateway token, required only when the gateway has
   // "Authenticated Gateway" enabled. Sent as `cf-aig-authorization`.
   AI_GATEWAY_TOKEN?: string;
+  // Optional guards, off unless set. REQUIRE_STORE_FALSE = "1" refuses bodies without
+  // `"store": false` (apps that promise nothing is kept at OpenAI). MAX_BODY_BYTES caps the body.
+  REQUIRE_STORE_FALSE?: string;
+  MAX_BODY_BYTES?: string;
 }
 
 const CHALLENGE_TTL_SECONDS = 300;
@@ -104,6 +108,17 @@ async function handleProxy(request: Request, env: Env): Promise<Response> {
   if (env.KILL_SWITCH === '1') return json({ error: 'Service temporarily disabled' }, 503);
 
   const bodyBytes = new Uint8Array(await request.arrayBuffer());
+
+  const maxBytes = parseInt(env.MAX_BODY_BYTES ?? '', 10);
+  if (maxBytes > 0 && bodyBytes.byteLength > maxBytes) return json({ error: 'Request too large' }, 413);
+  if (env.REQUIRE_STORE_FALSE === '1') {
+    try {
+      const parsed = JSON.parse(new TextDecoder().decode(bodyBytes)) as { store?: unknown };
+      if (parsed.store !== false) return json({ error: 'store must be false' }, 400);
+    } catch {
+      return json({ error: 'Malformed body' }, 400);
+    }
+  }
 
   const devToken = request.headers.get('X-Proxy-Dev-Token');
   const devBypass =
