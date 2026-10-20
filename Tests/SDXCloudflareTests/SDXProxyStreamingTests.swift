@@ -2,9 +2,9 @@ import Foundation
 import Testing
 @testable import SDXCloudflare
 
-/// The streaming seam, at the level that can be tested without a network or App Attest.
+/// The streaming seam, at the level that can be tested without a network or App Check.
 ///
-/// `SDXProxyClient.sendStream` itself needs a real `URLSession` and a real attested device, so what is
+/// `SDXProxyClient.sendStream` itself needs a real `URLSession` and a configured Firebase app, so what is
 /// covered here is the part that has logic in it: the protocol default, which is what every fake and
 /// every non-streaming transport falls back to. It has to behave like the buffered call it wraps, or a
 /// caller that switched to streaming would quietly get different data in tests than in production.
@@ -13,7 +13,6 @@ struct SDXProxyStreamingTests {
     /// A client that returns a canned body and records what it was asked for.
     private struct StubClient: SDXProxyClientProtocol {
         let configuration = SDXProxyConfiguration(proxyBaseURL: URL(string: "https://example.invalid")!)
-        let isAvailable = true
         let body: Data
         let recorder: Recorder
 

@@ -2,14 +2,19 @@
 
 Holds a **single shared upstream API key** (e.g. OpenAI) server-side and forwards
 requests from your app to `/v1/responses`. The app ships with **no** upstream
-credentials; each request is authenticated with **Apple App Attest** so only
-genuine, unmodified copies of the app on real devices can use the key.
+credentials; each request carries a **Firebase App Check** token so only
+genuine copies of the app can use the key.
 
 ```
-app ──App Attest assertion──▶ Worker ──Bearer <shared key>──▶ upstream (/v1/responses)
-                                │                             (optionally via AI Gateway)
-                                └── KV: device public keys, one-time challenges, daily counters
+app ──X-Firebase-AppCheck──▶ Worker ──Bearer <shared key>──▶ upstream (/v1/responses)
+                               │                             (optionally via AI Gateway)
+                               └── KV: daily counters (+ legacy App Attest device keys, challenges)
 ```
+
+**Legacy App Attest clients** (app versions built before SDXCloudflare moved to
+App Check) keep working: `/attest/*` and the `X-Proxy-Key-Id`/`-Assertion`/
+`-Client-Data` headers are still verified as before, as long as `APP_ID` and
+`APPATTEST_ENV` stay set. Drop that path once those versions are gone.
 
 Streaming (SSE) and any response-chaining tool calls pass through unchanged — the
 Worker forwards the request body verbatim and streams the response body back
@@ -36,22 +41,28 @@ A build's `appattest-environment` entitlement and the Worker's `APPATTEST_ENV`
 
 | Method | Path                 | Purpose |
 |--------|----------------------|---------|
-| POST   | `/attest/challenge`  | Issue a one-time challenge (5-min TTL). |
-| POST   | `/attest/register`   | Verify an App Attest attestation; store the device's public key. Once per install. |
-| POST   | `/v1/responses`      | Verify the per-request assertion, then proxy upstream. |
+| POST   | `/v1/responses`      | Verify the App Check token (or legacy assertion), then proxy upstream. |
+| POST   | `/attest/challenge`  | Legacy: issue a one-time App Attest challenge (5-min TTL). |
+| POST   | `/attest/register`   | Legacy: verify an App Attest attestation; store the device's public key. |
 
 ## Security model
 
-- **Attestation (once/install):** validates the Apple cert chain to the
+- **App Check (every request):** verifies the token's RS256 signature against
+  Firebase's JWKS (cached ≤ 6 h), issuer and audience for `FIREBASE_PROJECT_NUMBER`,
+  expiry, and — if `FIREBASE_APP_IDS` is set — the app ID. Tokens are not bound to
+  the request body and are reusable until they expire (~1 h by default).
+- **Legacy App Attest:**
+  - **Attestation (once/install):** validates the Apple cert chain to the
   [App Attest Root CA](src/appleRoot.ts), the nonce
   `SHA256(authData ‖ SHA256(challenge))`, the App ID (`rpIdHash`), the
   environment `aaguid`, and that `keyId == SHA256(publicKey)`. Stores the EC P-256
   public key + initial counter in KV.
-- **Assertion (every request):** verifies the ECDSA signature with the stored key,
+  - **Assertion (every request):** verifies the ECDSA signature with the stored key,
   the App ID, a strictly-increasing counter (replay protection), a consumed
   one-time challenge, and that `bodySHA256` in the signed client data matches the
   body actually forwarded upstream (request binding).
-- **Abuse caps:** a coarse per-device daily request cap in KV, plus a global
+- **Abuse caps:** a coarse per-install daily request cap in KV (keyed on the
+  client-sent `X-Proxy-Install-Id` for App Check, on `keyId` for App Attest), plus a global
   `KILL_SWITCH`. Put a **Cloudflare AI Gateway** endpoint in `OPENAI_BASE_URL` for
   real rate-limiting, caching, and spend analytics in front of the upstream API.
 
@@ -81,7 +92,9 @@ the client side).
 
 ## Dev / Simulator
 
-App Attest does not work in the Simulator. For a **non-production** deployment
+Pass one shared debug token to `SDXAppCheckProviderFactory` (registered once in
+the Firebase console) and every Simulator passes App Check, against either Worker.
+Or use the dev bypass: for a **non-production** deployment
 (`APPATTEST_ENV != "production"`) the Worker accepts requests carrying
 `X-Proxy-Dev-Token: <DEV_BYPASS_TOKEN>` and skips attestation. Never set
 `DEV_BYPASS_TOKEN` on the production Worker.

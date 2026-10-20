@@ -2,10 +2,17 @@
 // reflect-metadata polyfill loaded before it is imported.
 import 'reflect-metadata';
 import { verifyAttestation, verifyAssertion, type DeviceRecord } from './appattest';
+import { verifyAppCheckToken } from './appcheck';
 import { base64ToBytes, bytesToBase64, sha256 } from './util';
 
 export interface Env {
   PROXY_KV: KVNamespace;
+  // Firebase App Check (current clients). Project number from Firebase console → Project settings.
+  FIREBASE_PROJECT_NUMBER?: string;
+  // Comma-separated Firebase App IDs (`1:123:ios:abc`) allowed to call; unset = any app in the project.
+  FIREBASE_APP_IDS?: string;
+  // App Attest (legacy clients, SDXCloudflare before App Check). Also gates the dev bypass:
+  // APPATTEST_ENV = "production" disables it.
   APP_ID: string;
   APPATTEST_ENV: string;
   DAILY_REQUEST_CAP: string;
@@ -40,6 +47,9 @@ function challengeKey(challenge: string) {
 }
 
 // --- /attest/challenge -------------------------------------------------------
+// /attest/* and the X-Proxy-Key-Id/Assertion/Client-Data headers serve only legacy App Attest
+// clients. Remove them (and appattest.ts, appleRoot.ts, the cbor/x509 deps) once those app
+// versions are no longer in use.
 
 async function handleChallenge(env: Env): Promise<Response> {
   const random = new Uint8Array(32);
@@ -127,13 +137,32 @@ async function handleProxy(request: Request, env: Env): Promise<Response> {
     devToken === env.DEV_BYPASS_TOKEN;
 
   let rateLimitKey = 'dev';
+  const appCheckToken = request.headers.get('X-Firebase-AppCheck');
 
-  if (!devBypass) {
+  if (!devBypass && appCheckToken) {
+    if (!env.FIREBASE_PROJECT_NUMBER) return json({ error: 'App Check not configured' }, 500);
+    try {
+      await verifyAppCheckToken({
+        token: appCheckToken,
+        projectNumber: env.FIREBASE_PROJECT_NUMBER,
+        appIds: (env.FIREBASE_APP_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+      });
+    } catch (err) {
+      return json({ error: `App Check rejected: ${(err as Error).message}` }, 401);
+    }
+    // ponytail: the install id is client-chosen, so a caller holding valid App Check tokens can
+    // rotate it to dodge the per-device cap. Use App Check limited-use tokens + replay protection
+    // if that matters; AI Gateway rate limits still apply.
+    const installId = request.headers.get('X-Proxy-Install-Id') ?? '';
+    rateLimitKey = /^[A-Za-z0-9-]{8,64}$/.test(installId)
+      ? `install:${installId}`
+      : `ip:${request.headers.get('CF-Connecting-IP') ?? 'unknown'}`;
+  } else if (!devBypass) {
     const keyId = request.headers.get('X-Proxy-Key-Id');
     const assertion = request.headers.get('X-Proxy-Assertion');
     const clientDataB64 = request.headers.get('X-Proxy-Client-Data');
     if (!keyId || !assertion || !clientDataB64) {
-      return json({ error: 'Missing App Attest headers' }, 401);
+      return json({ error: 'Missing App Check or App Attest headers' }, 401);
     }
 
     const stored = await env.PROXY_KV.get(deviceKey(keyId));

@@ -72,6 +72,21 @@ APPATTEST_ENV = "development"                 # dev   → sandbox
 APPATTEST_ENV = "production"                  # prod  → production
 ```
 
+### 5a. Firebase App Check (current clients)
+
+Current SDXCloudflare clients authenticate with Firebase App Check. In the Firebase
+console: add the iOS app, enable **App Check** with the **App Attest** provider (and
+DeviceCheck if you support older devices), and copy the **project number**
+(Project settings → General). Add to **both** blocks:
+
+```toml
+FIREBASE_PROJECT_NUMBER = "123456789012"
+FIREBASE_APP_IDS = "1:123456789012:ios:abc123"   # optional; comma-separated allow-list
+```
+
+`APP_ID` / `APPATTEST_ENV` stay: they serve app versions still on App Attest, and
+`APPATTEST_ENV = "production"` is what disables the dev bypass.
+
 ## 6. Set the secrets (per environment)
 
 Secrets are scoped to each Worker, so set the upstream API key **twice**:
@@ -138,11 +153,17 @@ Each prints its URL, e.g. `https://<yourapp>-proxy-dev.<sub>.workers.dev` and
 curl -s -X POST https://<yourapp>-proxy-dev.<sub>.workers.dev/attest/challenge
 #   → {"challenge":"…"}
 curl -s -X POST https://<yourapp>-proxy.<sub>.workers.dev/v1/responses -d '{}'
-#   → {"error":"Missing App Attest headers"}   (HTTP 401)
+#   → {"error":"Missing App Check or App Attest headers"}   (HTTP 401)
 ```
 
 ## 10. Wire the app
 
+- **Firebase:** add `GoogleService-Info.plist`, then at launch
+  `AppCheck.setAppCheckProviderFactory(SDXAppCheckProviderFactory(debugToken:))`
+  followed by `FirebaseApp.configure()`.
+- **Simulator:** generate one debug token (`uuidgen`), add it once in Firebase
+  console → App Check → Apps → Manage debug tokens, and pass it as `debugToken`
+  inside `#if DEBUG`. Every Simulator then works with no further setup.
 - **Per-build entitlements** select the App Attest environment (development vs.
   production), wired via `CODE_SIGN_ENTITLEMENTS` per build configuration.
 - **Per-build URL**, using `SDXProxyConfiguration(proxyBaseURL:)`:
@@ -185,13 +206,30 @@ App Attest only runs on real hardware.
   — no app update needed.
 - **Logs:** `npx wrangler tail [--env production]`.
 
+## Several apps from this folder
+
+Each app gets its own config next to `wrangler.toml` (e.g. `wrangler.clarta.toml`) with its own
+Worker names, KV ids and `APP_ID`. Pass it to **every** wrangler command:
+
+```bash
+npx wrangler kv namespace create PROXY_KV -c wrangler.clarta.toml
+npx wrangler secret put OPENAI_API_KEY -c wrangler.clarta.toml [--env production]
+npx wrangler deploy -c wrangler.clarta.toml [--env production]
+```
+
+Optional guards (vars, off unless set): `REQUIRE_STORE_FALSE = "1"` refuses bodies without
+`"store": false` (HTTP 400); `MAX_BODY_BYTES` caps the body (HTTP 413).
+
 ## Troubleshooting
 
 - **`aaguid mismatch: device sent "X", server expects "Y" env`** — the build's
   entitlement and the Worker's `APPATTEST_ENV` disagree. Align them (Debug ⇄
   `development`/dev Worker; Release/AppStore ⇄ `production`/prod Worker) and, if the
   device already registered under the other env, delete & reinstall the app.
-- **`Device not registered`** — registration never completed for this `keyId`;
+- **`App Check rejected: Issuer mismatch` / `Audience mismatch`** — `FIREBASE_PROJECT_NUMBER`
+  doesn't match the app's `GoogleService-Info.plist` project.
+- **`App Check rejected: App ID mismatch`** — add the app's Firebase App ID to `FIREBASE_APP_IDS`.
+- **`Device not registered`** (legacy App Attest clients) — registration never completed for this `keyId`;
   reinstall to re-register.
 - **`AiGatewayError ... "Unauthorized"` (code 2009)** — AI Gateway has Authenticated
   Gateway enabled but the Worker isn't sending the token. Set `AI_GATEWAY_TOKEN` on

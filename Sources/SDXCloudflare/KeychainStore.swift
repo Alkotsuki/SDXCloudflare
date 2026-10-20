@@ -53,7 +53,7 @@ struct SecurityFrameworkBacking: KeychainBacking {
     }
 }
 
-/// Persists small device-local secrets (the App Attest key identifier) outside source control and
+/// Persists small device-local secrets (the per-install id) outside source control and
 /// `UserDefaults`. Account-scoped so multiple values can live under one Keychain service.
 actor KeychainStore {
     private let service: String

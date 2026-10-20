@@ -7,12 +7,7 @@ public protocol SDXProxyClientProtocol: Sendable {
     /// `responses(body:)`) can resolve configurable paths without duplicating them.
     var configuration: SDXProxyConfiguration { get }
 
-    /// Whether the proxy can plausibly be reached from this build/device — App Attest is supported,
-    /// or a dev bypass token is configured. Does not guarantee the network call itself will
-    /// succeed; use this to gate UI, not to skip error handling.
-    var isAvailable: Bool { get }
-
-    /// POSTs `body` to `<proxyBaseURL>/<path>`, attaching App Attest (or dev-bypass) authorization,
+    /// POSTs `body` to `<proxyBaseURL>/<path>`, attaching App Check (or dev-bypass) authorization,
     /// and returns the raw response body. Throws `SDXProxyError` on any non-2xx response or
     /// transport failure.
     func send(path: String, body: Data, contentType: String) async throws -> Data
@@ -24,8 +19,7 @@ public protocol SDXProxyClientProtocol: Sendable {
     /// names, a JSON schema being filled in — belongs to the caller. This package knows nothing about
     /// its upstream and this method does not change that.
     ///
-    /// Authorization happens before the stream is returned, so the App Attest assertion is bound to
-    /// the request body exactly as in `send`. Streaming the *response* has no effect on that.
+    /// Authorization happens before the stream is returned, exactly as in `send`.
     ///
     /// Note that `SDXProxyConfiguration.requestTimeout` becomes an **idle** timeout for a streamed
     /// request — `URLRequest.timeoutInterval` measures the gap between packets, not the total. An
@@ -61,27 +55,16 @@ public extension SDXProxyClientProtocol {
 }
 
 /// The default `SDXProxyClientProtocol` implementation: a Cloudflare Worker client authorized via
-/// Apple App Attest.
-///
-/// An actor because App Attest key registration must be serialized — concurrent first-launch calls
-/// must not race two `generateKey`/`attestKey` attempts.
+/// Firebase App Check.
 public actor SDXProxyClient: SDXProxyClientProtocol {
     public nonisolated let configuration: SDXProxyConfiguration
     private let session: URLSession
-    private let authorizer: AppAttestAuthorizer
+    private let authorizer: AppCheckAuthorizer
 
     public init(configuration: SDXProxyConfiguration, session: URLSession = .shared) {
         self.configuration = configuration
         self.session = session
-        self.authorizer = AppAttestAuthorizer(
-            configuration: configuration,
-            keychain: KeychainStore(),
-            session: session
-        )
-    }
-
-    public nonisolated var isAvailable: Bool {
-        authorizer.isAvailable
+        self.authorizer = AppCheckAuthorizer(configuration: configuration, keychain: KeychainStore())
     }
 
     public func send(path: String, body: Data, contentType: String = "application/json") async throws -> Data {
@@ -91,7 +74,7 @@ public actor SDXProxyClient: SDXProxyClientProtocol {
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
-        try await authorizer.authorize(&request, body: body)
+        try await authorizer.authorize(&request)
 
         let data: Data
         let response: URLResponse
@@ -125,7 +108,7 @@ public actor SDXProxyClient: SDXProxyClientProtocol {
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.httpBody = body
 
-        try await authorizer.authorize(&request, body: body)
+        try await authorizer.authorize(&request)
 
         let bytes: URLSession.AsyncBytes
         let response: URLResponse
@@ -153,9 +136,8 @@ public actor SDXProxyClient: SDXProxyClientProtocol {
     /// Bridges `URLSession.AsyncBytes` to a stream of lines.
     ///
     /// `static`, and capturing nothing but the byte sequence, **so the reading task is not isolated to
-    /// this actor.** That matters: the actor is serialised because App Attest key registration must
-    /// not race, and holding it for the lifetime of a multi-second stream would serialise every
-    /// concurrent request behind it. Authorization happens on the actor; reading does not.
+    /// this actor.** Holding the actor for the lifetime of a multi-second stream would serialise
+    /// every concurrent request behind it. Authorization happens on the actor; reading does not.
     private static func lines(
         of bytes: URLSession.AsyncBytes
     ) -> AsyncThrowingStream<String, any Error> {

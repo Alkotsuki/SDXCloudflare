@@ -15,6 +15,14 @@ id = "REPLACE_WITH_KV_ID"
 preview_id = "REPLACE_WITH_PREVIEW_KV_ID"
 
 [vars]
+# Firebase App Check (current clients). Project number: Firebase console →
+# Project settings → General.
+FIREBASE_PROJECT_NUMBER = "REPLACE_WITH_FIREBASE_PROJECT_NUMBER"
+# Optional comma-separated allow-list of Firebase App IDs ("1:<number>:ios:<hash>").
+# Remove the line to accept any app in the project.
+FIREBASE_APP_IDS = "REPLACE_WITH_FIREBASE_APP_ID"
+# App Attest (legacy clients on SDXCloudflare before App Check). Keep while those
+# app versions are in use; APPATTEST_ENV = "production" also disables the dev bypass.
 # Apple Team ID + bundle id, dot-joined. Find your Team ID at
 # https://developer.apple.com/account (Membership).
 APP_ID = "REPLACE_WITH_TEAMID.BUNDLEID"
@@ -36,6 +44,8 @@ binding = "PROXY_KV"
 id = "REPLACE_WITH_PROD_KV_ID"
 
 [env.production.vars]
+FIREBASE_PROJECT_NUMBER = "REPLACE_WITH_FIREBASE_PROJECT_NUMBER"
+FIREBASE_APP_IDS = "REPLACE_WITH_FIREBASE_APP_ID"
 APP_ID = "REPLACE_WITH_TEAMID.BUNDLEID"
 APPATTEST_ENV = "production"
 DAILY_REQUEST_CAP = "200"

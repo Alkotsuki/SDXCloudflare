@@ -9,11 +9,9 @@ struct SDXProxyConfigurationTests {
         let configuration = SDXProxyConfiguration(proxyBaseURL: URL(string: "https://example.workers.dev")!)
 
         #expect(configuration.devBypassToken == nil)
-        #expect(configuration.keychainAccount == "SDXProxyAppAttestKeyId")
+        #expect(configuration.keychainAccount == "SDXProxyInstallId")
         #expect(configuration.headerPrefix == "X-Proxy")
         #expect(configuration.responsesPath == "v1/responses")
-        #expect(configuration.challengePath == "attest/challenge")
-        #expect(configuration.registerPath == "attest/register")
         #expect(configuration.requestTimeout == 60)
     }
 
@@ -25,8 +23,6 @@ struct SDXProxyConfigurationTests {
             keychainAccount: "CustomAccount",
             headerPrefix: "X-Custom",
             responsesPath: "custom/responses",
-            challengePath: "custom/challenge",
-            registerPath: "custom/register",
             requestTimeout: 15
         )
 
@@ -34,8 +30,6 @@ struct SDXProxyConfigurationTests {
         #expect(configuration.keychainAccount == "CustomAccount")
         #expect(configuration.headerPrefix == "X-Custom")
         #expect(configuration.responsesPath == "custom/responses")
-        #expect(configuration.challengePath == "custom/challenge")
-        #expect(configuration.registerPath == "custom/register")
         #expect(configuration.requestTimeout == 15)
     }
 }
